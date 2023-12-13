@@ -1,3 +1,6 @@
+#![ warn( rust_2018_idioms ) ]
+#![ warn( missing_debug_implementations ) ]
+
 use amazon_qldb_driver::aws_sdk_qldbsession::Config;
 use amazon_qldb_driver::QldbDriverBuilder;
 use anyhow::Result;
