@@ -15,3 +15,7 @@ tokio = { version = "1.35.0", features = ["full"] }
 aws-config = { version = "0.54.1", features = [] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.16", features = ["fmt"] }
+serde = { version = "1.0.193", features = ["derive"] }
+serde_json = "1.0.108"
+ion-rs = { version = "1.0.0-rc.1", git = "https://github.com/amazon-ion/ion-rust", features = ["experimental"]}
+serde_with = "3.4.0"

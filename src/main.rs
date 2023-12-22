@@ -1,12 +1,20 @@
-#![ warn( rust_2018_idioms ) ]
-#![ warn( missing_debug_implementations ) ]
+#![warn(rust_2018_idioms)]
+#![warn(missing_debug_implementations)]
 
 use amazon_qldb_driver::aws_sdk_qldbsession::Config;
 use amazon_qldb_driver::QldbDriverBuilder;
 use anyhow::Result;
-use ion_c_sys::reader::IonCReader;
+use ion_rs::serde::from_ion;
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 use tokio;
 
+#[serde_as]
+#[derive(Debug, Serialize, Deserialize)]
+struct Penguin {
+    id: usize,
+    name: String,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -20,20 +28,38 @@ async fn main() -> Result<()> {
         .sdk_config(Config::new(&aws_config))
         .await?;
 
-    //create table
+    // //create table
     driver
         .transact(|mut tx| async {
             let _ = tx.execute_statement("create table cago").await?;
             tx.commit(()).await
         })
         .await?;
+
     //insert values
+    let penguins = vec![
+        Penguin {
+            id: 1,
+            name: "crigo".into(),
+        },
+        Penguin {
+            id: 2,
+            name: "estriper".into(),
+        },
+        Penguin {
+            id: 3,
+            name: "Sanya".into(),
+        },
+    ]
+    .iter()
+    .map(|p| serde_json::to_string(p))
+    .filter_map(Result::ok)
+    .collect::<Vec<_>>()
+    .join(", ");
     driver
         .transact(|mut tx| async {
             let _ = tx
-                .execute_statement(
-                    "insert into cago <<{'id':1, 'name':'crigo'}, {'id':2, 'name':'estriper'}>>",
-                )
+                .execute_statement(format!("insert into cago <<{}>>", penguins).replace("\"", "'"))
                 .await?;
             tx.commit(()).await
         })
@@ -48,21 +74,19 @@ async fn main() -> Result<()> {
         })
         .await?;
     // select value
-    let estriper = driver
+    let penguins = driver
         .transact(|mut tx| async {
-            let result = tx.execute_statement("select value name from cago where cago.id = 2").await?;
-            let r: Vec<String> = result.readers()
-            .map(|reader| {
-                let mut reader = reader?;
-                let _ = reader.next()?;
-                let s = reader.read_string()?;
-                Ok(s.as_str().to_string())
-            })
-            .filter_map(|it: Result<String>| it.ok())
-            .collect();
+            let statment_result = tx
+                .execute_statement("select * from cago where cago.id > 0")
+                .await?;
+            let r: Vec<Penguin> = statment_result
+                .raw_values()
+                .into_iter()
+                .filter_map(|reader| from_ion(reader).ok())
+                .collect();
             tx.commit(r).await
         })
         .await?;
-    println!("name {:?}", estriper);
+    println!("{:?}", penguins);
     Ok(())
 }
