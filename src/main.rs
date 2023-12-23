@@ -1,5 +1,6 @@
 #![ warn( rust_2018_idioms ) ]
-#![ warn( missing_debug_implementations ) ]
+#![warn( missing_debug_implementations ) ]
+
 
 use amazon_qldb_driver::aws_sdk_qldbsession::Config;
 use amazon_qldb_driver::QldbDriverBuilder;
@@ -17,18 +18,26 @@ struct Penguin
   name : String,
 }
 
+impl Penguin 
+{
+  fn to_ion_object( self ) -> String 
+  {
+    format!( "{{ 'id': {}, 'name': '{}'}}", self.id, self.name )
+  }
+}
+
 #[ tokio::main ]
 async fn main() -> Result< () > 
 {
   dotenv::dotenv().ok();
-  tracing_subscriber::fmt::init();  
+  tracing_subscriber::fmt::init();
 
-  let aws_config = aws_config::load_from_env().await;  
+  let aws_config = aws_config::load_from_env().await;
   let driver = QldbDriverBuilder::new()
   .ledger_name( "kawasaki" )
   .sdk_config( Config::new( &aws_config ) )
-  .await?;  
-  //create table
+  .await?;
+  // create table
   driver
   .transact
   (
@@ -38,8 +47,8 @@ async fn main() -> Result< () >
       tx.commit( () ).await
     }
   )
-  .await?;  
-  //insert values
+  .await?;
+  // insert values
   let penguins = vec!
   [
     Penguin 
@@ -58,27 +67,27 @@ async fn main() -> Result< () >
       name : "Sanya".into(),
     },
   ]
-  .iter()
-  .map( | p | serde_json::to_string( p ) )
-  .filter_map( Result::ok )
+  .into_iter()
+  .map( Penguin::to_ion_object )
   .collect::< Vec< _ > >()
   .join( ", " );
+
   driver
   .transact
-  ( 
-    | mut tx | async 
+  (
+    | mut tx | async
     {
       let _ = tx
-      .execute_statement( format!( "insert into cago <<{}>>", penguins ).replace( "\"", "'" ) )
+      .execute_statement( format!( "insert into cago <<{}>>", penguins ) )
       .await?;
       tx.commit(()).await
     }
   ).await?;
-  // delete value
+    // // delete value
   driver
   .transact
   (
-    | mut tx | async 
+    | mut tx | async
     {
       let _ = tx
       .execute_statement( "delete from cago as c where c.id = 1" )
@@ -89,8 +98,8 @@ async fn main() -> Result< () >
   // select value
   let penguins = driver
   .transact
-  ( 
-    | mut tx | async 
+  (
+    | mut tx | async
     {
       let statment_result = tx
       .execute_statement( "select * from cago where cago.id > 0" )
@@ -100,11 +109,11 @@ async fn main() -> Result< () >
       .into_iter()
       .filter_map( | reader | from_ion( reader ).ok() )
       .collect();
-      
+
       tx.commit(r).await
     }
   ).await?;
-  
+
   println!( "{:?}", penguins );
   Ok( () )
 }
