@@ -68,7 +68,7 @@ async fn main() -> Result<()> {
     | client | async move
     {
       client
-      .query( "delete from cago1 as c where c.id = ?" )
+      .query( "delete from cago as c where c.id = ?" )
       .param( 1 )
       .execute()
       .await?;
