@@ -1,55 +1,33 @@
 #![ warn( rust_2018_idioms ) ]
 #![warn( missing_debug_implementations ) ]
 
-
-use amazon_qldb_driver::aws_sdk_qldbsession::Config;
-use amazon_qldb_driver::QldbDriverBuilder;
 use anyhow::Result;
-use ion_rs::serde::from_ion;
-use serde::{ Deserialize, Serialize };
-use serde_with::serde_as;
-use tokio;
+use ion_binary_rs::IonValue;
+use qldb::QldbClient;
+use serde::{Serialize, Deserialize};
 
-#[ serde_as ]
-#[ derive( Debug, Serialize, Deserialize ) ]
+#[ derive( Debug, Serialize, Deserialize, Clone ) ]
 struct Penguin 
 {
   id : usize,
   name : String,
 }
 
-impl Penguin 
-{
-  fn to_ion_object( self ) -> String 
-  {
-    format!( "{{ 'id': {}, 'name': '{}'}}", self.id, self.name )
-  }
-}
-
-#[ tokio::main ]
-async fn main() -> Result< () > 
-{
+#[tokio::main]
+async fn main() -> Result<()> {
   dotenv::dotenv().ok();
-  tracing_subscriber::fmt::init();
-
-  let aws_config = aws_config::load_from_env().await;
-  let driver = QldbDriverBuilder::new()
-  .ledger_name( "kawasaki" )
-  .sdk_config( Config::new( &aws_config ) )
-  .await?;
+  let client = QldbClient::default( "kawasaki", 200 ).await?;
   // create table
-  driver
-  .transact
+  client.transaction_within
   (
-    | mut tx | async 
+    | client  | async move
     {
-      let _ = tx.execute_statement( "create table cago" ).await?;
-      tx.commit( () ).await
+      client.query( "create table cago" ).execute().await?;
+      Ok( () )
     }
-  )
-  .await?;
-  // insert values
-  let penguins = vec!
+  ).await?;
+
+  let mut penguins = vec!
   [
     Penguin 
     {
@@ -68,52 +46,60 @@ async fn main() -> Result< () >
     },
   ]
   .into_iter()
-  .map( Penguin::to_ion_object )
-  .collect::< Vec< _ > >()
-  .join( ", " );
-
-  driver
-  .transact
+  .filter_map( | p | IonValue::try_from( serde_json::to_value( p ).ok()? ).ok() );
+  // insert values
+  client.transaction_within
   (
-    | mut tx | async
+    | client | async move
     {
-      let _ = tx
-      .execute_statement( format!( "insert into cago <<{}>>", penguins ) )
+      client
+      .query( "insert into cago << ?, ?, ? >>" )
+      .param( penguins.next().unwrap() )
+      .param( penguins.next().unwrap() )
+      .param( penguins.next().unwrap() )
+      .execute()
       .await?;
-      tx.commit(()).await
+      Ok(())
     }
   ).await?;
-    // // delete value
-  driver
-  .transact
-  (
-    | mut tx | async
+  // // delete value
+  client.transaction_within
+  ( 
+    | client | async move
     {
-      let _ = tx
-      .execute_statement( "delete from cago as c where c.id = 1" )
+      client
+      .query( "delete from cago1 as c where c.id = ?" )
+      .param( 1 )
+      .execute()
       .await?;
-      tx.commit( () ).await
+      Ok( () )
     }
   ).await?;
-  // select value
-  let penguins = driver
-  .transact
-  (
-    | mut tx | async
+  // select values
+  let p = client
+  .transaction_within
+  ( 
+    | client | async move
     {
-      let statment_result = tx
-      .execute_statement( "select * from cago where cago.id > 0" )
-      .await?;
-      let r: Vec< Penguin > = statment_result
-      .raw_values()
-      .into_iter()
-      .filter_map( | reader | from_ion( reader ).ok() )
-      .collect();
-
-      tx.commit(r).await
+      let result= client.query( "select * from cago where cago.id > ?" )
+      .param( 1 )
+      .execute()
+      .await?
+      .into_vec()
+      .into_iter().map
+      ( 
+        | d |
+        {
+          Penguin
+          {
+            id: d.get_value::< i64 >( "id" ).unwrap() as usize, 
+            name: d.get_value( "name" ).unwrap()
+          }
+        }
+      ).collect::< Vec< Penguin > >();
+      Ok( result )
     }
   ).await?;
-
-  println!( "{:?}", penguins );
+  dbg!( p );
   Ok( () )
-}
+} 
