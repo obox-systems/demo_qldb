@@ -4,7 +4,7 @@
 use anyhow::Result;
 use ion_binary_rs::IonValue;
 use qldb::QldbClient;
-use serde::{Serialize, Deserialize};
+use serde::{ Serialize, Deserialize };
 
 #[ derive( Debug, Serialize, Deserialize, Clone ) ]
 struct Penguin 
@@ -14,7 +14,8 @@ struct Penguin
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result< () > 
+{
   dotenv::dotenv().ok();
   let client = QldbClient::default( "kawasaki", 200 ).await?;
   // create table
